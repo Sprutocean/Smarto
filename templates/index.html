@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ethereum Security Toolkit</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Styles for vulnerable opcode highlighting */
+        .opcode-warning {
+            background-color: #fd7e14;
+            color: white;
+            padding: 2px 4px;
+            border-radius: 3px;
+            cursor: help;
+            position: relative;
+            display: inline-block;
+        }
+        
+        .tooltip-text {
+            visibility: hidden;
+            width: 300px;
+            background-color: #555;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 10px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -150px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        
+        .opcode-warning:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        /* Processing indicator styles */
+        #processing-indicator {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            background-color: #343a40;
+            color: white;
+            border-radius: 6px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+        }
+        
+        #processing-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background-color: #212529;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            cursor: move;
+        }
+        
+        #processing-body {
+            padding: 15px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        
+        .status-message {
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        
+        .status-step {
+            color: #17a2b8;
+        }
+        
+        .status-complete {
+            color: #28a745;
+        }
+        
+        .status-warning {
+            color: #ffc107;
+        }
+        
+        .status-error {
+            color: #dc3545;
+        }
+        
+        #loading-bar {
+            height: 4px;
+            width: 100%;
+            background-color: #495057;
+        }
+        
+        #loading-progress {
+            height: 100%;
+            width: 0%;
+            background-color: #17a2b8;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <!-- Processing Indicator -->
+    <div id="processing-indicator">
+        <div id="processing-header">
+            <span>{{ _('progress') }}</span>
+            <button type="button" class="btn-close btn-close-white" aria-label="Close" onclick="toggleProcessingWindow()"></button>
+        </div>
+        <div id="loading-bar">
+            <div id="loading-progress"></div>
+        </div>
+        <div id="processing-body">
+            <div class="status-message">{{ _('starting_analysis') }}</div>
+        </div>
+    </div>
+
+    <div class="container mt-4">
+        <!-- Hidden data element for analysis state -->
+        <div id="app-data" data-analysis-complete="{{ 'true' if analysis_complete else 'false' }}" style="display:none;"></div>
+        
+        <header class="mb-4 d-flex justify-content-between align-items-center">
+            <div>
+                <h1 class="display-4">{{ _('app_title') }}</h1>
+                <p class="lead">{{ _('app_subtitle') }}</p>
+            </div>
+            <div>
+                <div class="btn-group me-2">
+                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-translate" viewBox="0 0 16 16">
+                            <path d="M4.545 6.714 4.11 8H3l1.862-5h1.284L8 8H6.833l-.435-1.286zm1.634-.736L5.5 3.956h-.049l-.679 2.022z"/>
+                            <path d="M0 2a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v3h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-3H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zm7.138 9.995c.193.301.402.583.63.846-.748.575-1.673 1.001-2.768 1.292.178.217.451.635.555.867 1.125-.359 2.08-.844 2.886-1.494.777.665 1.739 1.165 2.93 1.472.133-.254.414-.673.629-.89-1.125-.253-2.057-.694-2.82-1.284.681-.747 1.222-1.651 1.621-2.757H14V8h-3v1.047h.765c-.318.844-.74 1.546-1.272 2.13a6 6 0 0 1-.415-.492 8 8 0 0 1-.94 1.31"/>
+                        </svg>
+                        {{ _('Language') }}
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item {% if g.get('lang_code') == 'en' %}active{% endif %}" href="{{ url_for('set_language', lang='en') }}">English</a></li>
+                        <li><a class="dropdown-item {% if g.get('lang_code') == 'ru' %}active{% endif %}" href="{{ url_for('set_language', lang='ru') }}">Русский</a></li>
+                    </ul>
+                </div>
+                <button class="btn btn-outline-secondary btn-sm" onclick="toggleProcessingWindow()" title="{{ _('Show analysis progress') }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-activity" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M6 2a.5.5 0 0 1 .47.33L10 12.036l1.53-4.208A.5.5 0 0 1 12 7.5h3.5a.5.5 0 0 1 0 1h-3.15l-1.88 5.17a.5.5 0 0 1-.94 0L6 3.964 4.47 8.171A.5.5 0 0 1 4 8.5H.5a.5.5 0 0 1 0-1h3.15l1.88-5.17A.5.5 0 0 1 6 2Z"/>
+                    </svg>
+                    {{ _('Progress') }}
+                </button>
+            </div>
+        </header>
+
+        {% if not toolkit_available %}
+        <div class="alert alert-warning mb-4" role="alert">
+            <h5>{{ _('toolkit_unavailable') }}</h5>
+            <p>{{ _('toolkit_files_needed') }}</p>
+            <ul>
+                <li>ethereum-security-toolkit.py</li>
+                <li>info-getter.py</li>
+                <li>bytecode.py</li>
+                <li>reentrancy-vulnerability-checker.py</li>
+                <li>child-parent.py</li>
+            </ul>
+            <p>{{ _('toolkit_limited') }}</p>
+        </div>
+        {% endif %}
+
+        {% if error_message %}
+        <div class="alert alert-danger" role="alert">
+            {{ error_message }}
+        </div>
+        {% endif %}
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>{{ _('analysis_details') }}</h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('index') }}" method="post" id="analysis-form">
+                    <div class="row mb-3">
+                        <div class="col-md-8">
+                            <label for="contract_address" class="form-label">{{ _('contract_address') }}</label>
+                            <input type="text" class="form-control" id="contract_address" name="contract_address" 
+                                   placeholder="0xYourContractAddress" value="{{ contract_address }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="network" class="form-label">{{ _('network') }}</label>
+                            <select class="form-select" id="network" name="network">
+                                <option value="mainnet" {% if network == 'mainnet' %}selected{% endif %}>Mainnet</option>
+                                <option value="goerli" {% if network == 'goerli' %}selected{% endif %}>Goerli</option>
+                                <option value="sepolia" {% if network == 'sepolia' %}selected{% endif %}>Sepolia</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="popular_contract" class="form-label">{{ _('select_popular') }}</label>
+                        <select class="form-select" id="popular_contract" name="popular_contract">
+                            <option value="" selected>{{ _('select_contract') }}</option>
+                            {% for key, contract in popular_contracts.items() %}
+                            <option value="{{ key }}">{{ contract.name }} ({{ contract.address }})</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            {{ _('Select from a list of popular contracts to analyze.') }}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">{{ _('analysis_type') }}</label>
+                        <div class="form-check">
+                            <input class="form-check-input analysis-type-radio" type="radio" name="analysis_type" id="analysis_full" 
+                                   value="analyze" {% if analysis_type == 'analyze' %}checked{% endif %}>
+                            <label class="form-check-label" for="analysis_full">
+                                {{ _('full_analysis') }}
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input analysis-type-radio" type="radio" name="analysis_type" id="analysis_reentrancy" 
+                                   value="reentrancy" {% if analysis_type == 'reentrancy' %}checked{% endif %}>
+                            <label class="form-check-label" for="analysis_reentrancy">
+                                {{ _('reentrancy_check') }}
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input analysis-type-radio" type="radio" name="analysis_type" id="analysis_bytecode" 
+                                   value="bytecode" {% if analysis_type == 'bytecode' %}checked{% endif %}>
+                            <label class="form-check-label" for="analysis_bytecode">
+                                {{ _('bytecode_analysis') }}
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input analysis-type-radio" type="radio" name="analysis_type" id="analysis_relations" 
+                                   value="relations" {% if analysis_type == 'relations' %}checked{% endif %}>
+                            <label class="form-check-label" for="analysis_relations">
+                                {{ _('contract_relationships') }}
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">{{ _('analysis_options') }}</label>
+                        <div class="form-check" id="reentrancy-options">
+                            <input class="form-check-input" type="checkbox" name="skip_reentrancy" id="skip_reentrancy" 
+                                   value="1" {% if skip_reentrancy %}checked{% endif %}>
+                            <label class="form-check-label" for="skip_reentrancy">
+                                {{ _('skip_reentrancy') }}
+                            </label>
+                            <div class="form-text">
+                                {{ _('skip_reentrancy_desc') }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" {% if not toolkit_available %}disabled{% endif %} id="analyze-button">
+                        <span class="d-none spinner-border spinner-border-sm" id="analyze-spinner" role="status" aria-hidden="true"></span>
+                        {{ _('analyze_contract') }}
+                    </button>
+                    {% if not toolkit_available %}
+                    <div class="form-text text-warning mt-2">
+                        {{ _('analysis_disabled') }}
+                    </div>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+
+        {% if analysis_complete %}
+        <!-- Results section - only show if analysis is complete -->
+        <div id="results-section">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Analysis Details</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p><strong>Contract Address:</strong></p>
+                            <p class="text-break">{{ contract_address }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Network:</strong></p>
+                            <p>{{ network }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong>Analysis Type:</strong></p>
+                            <p>{{ analysis_type }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {% if analysis_type == 'analyze' %}
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Contract Information</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if results.contract_info %}
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p><strong>Contract Type:</strong> 
+                                        {% if results.contract_info.is_erc20 or results.contract_info.is_erc721 %}
+                                        Token
+                                        {% else %}
+                                        Standard Contract
+                                        {% endif %}
+                                    </p>
+                                    <p><strong>Balance:</strong> {{ results.contract_info.balance_eth }} ETH</p>
+                                    {% if results.contract_info.is_proxy %}
+                                    <p><strong>Is Proxy:</strong> Yes</p>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-6">
+                                    {% if results.contract_info.is_erc20 and results.contract_info.token_info %}
+                                    <h6>Token Information</h6>
+                                    <p><strong>Name:</strong> {{ results.contract_info.token_info.name }}</p>
+                                    <p><strong>Symbol:</strong> {{ results.contract_info.token_info.symbol }}</p>
+                                    <p><strong>Decimals:</strong> {{ results.contract_info.token_info.decimals }}</p>
+                                    <p><strong>Total Supply:</strong> {{ results.contract_info.token_info.total_supply }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% else %}
+                            <p>No contract information available.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if results.security_info and results.security_info.dangerous_opcodes %}
+                    {% set has_dangerous = false %}
+                    {% for opcode, positions in results.security_info.dangerous_opcodes.items() %}
+                        {% if positions|length > 0 %}
+                            {% set has_dangerous = true %}
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if has_dangerous %}
+                    <div class="card mb-4">
+                        <div class="card-header bg-warning">
+                            <h5>Security Warnings</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>The following potentially dangerous operations were detected in the contract bytecode:</p>
+                            <ul>
+                                {% for opcode, positions in results.security_info.dangerous_opcodes.items() %}
+                                    {% if positions|length > 0 %}
+                                        <li>
+                                            <strong class="opcode-warning">
+                                                {{ opcode }}
+                                                <span class="tooltip-text">
+                                                    {% if opcode == 'DELEGATECALL' %}
+                                                        Use delegatecall only with trusted contracts. Validate the contract being called and ensure it cannot modify critical storage variables.
+                                                    {% elif opcode == 'SELFDESTRUCT' %}
+                                                        selfdestruct can be used to remove a contract from the blockchain and send its remaining balance to a specified address. If a contract has a selfdestruct function that can be called by anyone, it can be exploited to drain funds.
+                                                    {% elif opcode == 'TX.ORIGIN' %}
+                                                        Using tx.origin for authentication can be exploited if a user unknowingly interacts with a malicious contract that calls the vulnerable contract.
+                                                    {% endif %}
+                                                </span>
+                                            </strong> 
+                                            found at {{ positions|length }} location{% if positions|length > 1 %}s{% endif %}
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                            </ul>
+                            <p class="mt-3">
+                                <strong>Note:</strong> The presence of these operations doesn't necessarily mean the contract is vulnerable. 
+                                A manual code review is recommended to verify the security implications.
+                            </p>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endif %}
+
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Function Signatures</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if results.disassembly and results.disassembly.function_signatures %}
+                            <p>Identified {{ results.disassembly.function_signatures|length }} function signatures:</p>
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Selector</th>
+                                            <th>Function Signature</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for selector, signature in results.disassembly.function_signatures.items() %}
+                                        <tr>
+                                            <td><code>0x{{ selector }}</code></td>
+                                            <td>{{ signature }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p>No function signatures identified.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if analysis_type == 'analyze' or analysis_type == 'reentrancy' %}
+                <div class="card mb-4">
+                    <div class="card-header {% if results.reentrancy_findings %}bg-warning{% else %}bg-success{% endif %}">
+                        <h5>Reentrancy Vulnerability Check</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if results.reentrancy_findings %}
+                            <div class="alert alert-warning">
+                                <p><strong>Found {{ results.reentrancy_findings|length }} potential reentrancy issues:</strong></p>
+                                <ul>
+                                    {% for finding in results.reentrancy_findings %}
+                                    <li>{{ finding }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-success">
+                                <p>No obvious reentrancy vulnerabilities detected.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if analysis_type == 'bytecode' %}
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Bytecode Analysis</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if results.instructions %}
+                            {% if results.security_info and results.security_info.dangerous_opcodes %}
+                                {% set has_dangerous = false %}
+                                {% for opcode, positions in results.security_info.dangerous_opcodes.items() %}
+                                    {% if positions|length > 0 %}
+                                        {% set has_dangerous = true %}
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if has_dangerous %}
+                                <div class="alert alert-warning mb-3">
+                                    <h6>⚠️ Security Warnings</h6>
+                                    <p>The following potentially dangerous operations were detected:</p>
+                                    <ul>
+                                        {% for opcode, positions in results.security_info.dangerous_opcodes.items() %}
+                                            {% if positions|length > 0 %}
+                                                <li>
+                                                    <strong class="opcode-warning">
+                                                        {{ opcode }}
+                                                        <span class="tooltip-text">
+                                                            {% if opcode == 'DELEGATECALL' %}
+                                                                Use delegatecall only with trusted contracts. Validate the contract being called and ensure it cannot modify critical storage variables.
+                                                            {% elif opcode == 'SELFDESTRUCT' %}
+                                                                selfdestruct can be used to remove a contract from the blockchain and send its remaining balance to a specified address. If a contract has a selfdestruct function that can be called by anyone, it can be exploited to drain funds.
+                                                            {% elif opcode == 'TX.ORIGIN' %}
+                                                                Using tx.origin for authentication can be exploited if a user unknowingly interacts with a malicious contract that calls the vulnerable contract.
+                                                            {% endif %}
+                                                        </span>
+                                                    </strong> 
+                                                    found at {{ positions|length }} location{% if positions|length > 1 %}s{% endif %}
+                                                </li>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                {% endif %}
+                            {% endif %}
+                        
+                            <h6>Disassembled Instructions (first 100)</h6>
+                            <div class="mb-3">
+                                <pre class="border p-3 bg-light"><code id="bytecode-instructions">{% for instr in results.instructions %}{{ instr }}
+{% endfor %}</code></pre>
+                            </div>
+                            
+                            <h6>Function Signatures</h6>
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Selector</th>
+                                            <th>Function Signature</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for selector, signature in results.function_signatures.items() %}
+                                        <tr>
+                                            <td><code>0x{{ selector }}</code></td>
+                                            <td>{{ signature }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p>No bytecode analysis available.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if analysis_type == 'relations' or analysis_type == 'analyze' %}
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Contract Relationships</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if results.relationships %}
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Child Contract Creation</h6>
+                                    {% if results.relationships.child_indicators %}
+                                        <div class="alert alert-warning">
+                                            <p>Found child contract creation operations:</p>
+                                            <ul>
+                                                {% for op in results.relationships.creation_ops %}
+                                                <li>{{ op.opcode }} at position {{ op.position }}</li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    {% else %}
+                                        <div class="alert alert-success">
+                                            <p>No direct child contract creation operations detected.</p>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Proxy Patterns</h6>
+                                    {% if results.relationships.proxy_indicators %}
+                                        <div class="alert alert-warning">
+                                            <p>Proxy contract indicators detected:</p>
+                                            
+                                            {% if results.relationships.proxy_signatures %}
+                                            <p>Function signatures indicating proxy:</p>
+                                            <ul>
+                                                {% for sig in results.relationships.proxy_signatures %}
+                                                <li>0x{{ sig.selector }}: {{ sig.signature }}</li>
+                                                {% endfor %}
+                                            </ul>
+                                            {% endif %}
+                                            
+                                            {% if results.relationships.clone_pattern_detected %}
+                                            <p>EIP-1167 minimal proxy pattern detected.</p>
+                                            {% endif %}
+                                        </div>
+                                    {% else %}
+                                        <div class="alert alert-success">
+                                            <p>No proxy indicators detected.</p>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            
+                            {% if results.relationships.parent_candidates %}
+                                <h6>Potential Parent/Implementation Contracts</h6>
+                                <ul>
+                                    {% for addr in results.relationships.parent_candidates %}
+                                    <li>{{ addr }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                            
+                            {% if results.decoded_relationships and results.decoded_relationships.implementation_addresses %}
+                                <h6>Potential Implementation Addresses Found in Bytecode</h6>
+                                <ul>
+                                    {% for addr in results.decoded_relationships.implementation_addresses %}
+                                    <li>{{ addr }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        {% else %}
+                            <p>No relationship analysis available.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Raw Analysis Data</h5>
+                </div>
+                <div class="card-body">
+                    <pre class="border p-3 bg-light"><code>{{ results_json }}</code></pre>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Auto-fill the contract address field when a popular contract is selected
+        document.getElementById('popular_contract').addEventListener('change', function() {
+            if (this.value) {
+                document.getElementById('contract_address').value = '';
+            }
+        });
+
+        // Handle analysis type changes
+        document.querySelectorAll('.analysis-type-radio').forEach(function(radio) {
+            radio.addEventListener('change', function() {
+                const skipReentrancyOption = document.getElementById('reentrancy-options');
+                const skipReentrancyCheckbox = document.getElementById('skip_reentrancy');
+                
+                // If analysis type is reentrancy, disable the skip reentrancy option
+                if (this.value === 'reentrancy') {
+                    skipReentrancyCheckbox.checked = false;
+                    skipReentrancyCheckbox.disabled = true;
+                    skipReentrancyOption.classList.add('text-muted');
+                } else {
+                    skipReentrancyCheckbox.disabled = false;
+                    skipReentrancyOption.classList.remove('text-muted');
+                }
+            });
+        });
+        
+        // Initialize the state based on the current selection
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get analysis state from data attribute
+            var appData = document.getElementById('app-data');
+            var analysisComplete = appData && appData.dataset.analysisComplete === 'true';
+            
+            // Scroll to results if analysis is complete
+            if (analysisComplete) {
+                var resultsSection = document.getElementById('results-section');
+                if (resultsSection) {
+                    resultsSection.scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                }
+            }
+            
+            // Highlight dangerous opcodes
+            var bytecodeElement = document.getElementById('bytecode-instructions');
+            if (bytecodeElement) {
+                var html = bytecodeElement.innerHTML;
+                
+                // Define dangerous opcodes and their warnings
+                var dangerousOpcodes = {
+                    'DELEGATECALL': 'Use delegatecall only with trusted contracts. Validate the contract being called and ensure it cannot modify critical storage variables.',
+                    'SELFDESTRUCT': 'selfdestruct can be used to remove a contract from the blockchain and send its remaining balance to a specified address. If a contract has a selfdestruct function that can be called by anyone, it can be exploited to drain funds.',
+                    'TX.ORIGIN': 'Using tx.origin for authentication can be exploited if a user unknowingly interacts with a malicious contract that calls the vulnerable contract.'
+                };
+                
+                // Replace each dangerous opcode with highlighted version
+                for (var opcode in dangerousOpcodes) {
+                    var regex = new RegExp('(\\b' + opcode + '\\b)', 'gi');
+                    html = html.replace(regex, '<span class="opcode-warning">$1<span class="tooltip-text">' + dangerousOpcodes[opcode] + '</span></span>');
+                }
+                
+                bytecodeElement.innerHTML = html;
+            }
+            
+            // Handle the reentrancy checkbox based on selected analysis type
+            const currentType = document.querySelector('.analysis-type-radio:checked');
+            if (currentType && currentType.value === 'reentrancy') {
+                const skipReentrancyCheckbox = document.getElementById('skip_reentrancy');
+                skipReentrancyCheckbox.checked = false;
+                skipReentrancyCheckbox.disabled = true;
+                document.getElementById('reentrancy-options').classList.add('text-muted');
+            }
+        });
+
+        // Form submission handler - show spinner
+        document.getElementById('analysis-form').addEventListener('submit', function() {
+            const spinner = document.getElementById('analyze-spinner');
+            const button = document.getElementById('analyze-button');
+            
+            spinner.classList.remove('d-none');
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ' + translations.analyzing;
+            
+            showProcessingWindow();
+            updateProgress(0, translations.starting_analysis);
+            simulateAnalysisProgress();
+            
+            return true;
+        });
+        
+        // Update the progress bar and add a message
+        function updateProgress(percent, message, type) {
+            var progressBar = document.getElementById('loading-progress');
+            var messageContainer = document.getElementById('processing-body');
+            
+            if (progressBar) {
+                progressBar.style.width = percent + '%';
+            }
+            
+            if (messageContainer && message) {
+                var statusClass = 'status-' + (type || 'info');
+                var messageElement = document.createElement('div');
+                messageElement.className = 'status-message ' + statusClass;
+                messageElement.textContent = message;
+                messageContainer.appendChild(messageElement);
+                messageContainer.scrollTop = messageContainer.scrollHeight;
+            }
+        }
+        
+        // Show or hide the processing window
+        function toggleProcessingWindow() {
+            var indicator = document.getElementById('processing-indicator');
+            if (indicator) {
+                if (indicator.style.display === 'none' || !indicator.style.display) {
+                    indicator.style.display = 'block';
+                } else {
+                    indicator.style.display = 'none';
+                }
+            }
+        }
+        
+        // Show the processing window and reset its state
+        function showProcessingWindow() {
+            var indicator = document.getElementById('processing-indicator');
+            var progressBar = document.getElementById('loading-progress');
+            var messageContainer = document.getElementById('processing-body');
+            
+            if (indicator) {
+                indicator.style.display = 'block';
+            }
+            
+            if (progressBar) {
+                progressBar.style.width = '0%';
+            }
+            
+            if (messageContainer) {
+                messageContainer.innerHTML = '';
+            }
+        }
+        
+        // Make the processing window draggable
+        document.addEventListener('DOMContentLoaded', function() {
+            makeElementDraggable(document.getElementById('processing-indicator'), document.getElementById('processing-header'));
+        });
+        
+        function makeElementDraggable(element, handle) {
+            if (!element || !handle) return;
+            
+            var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            handle.onmousedown = dragMouseDown;
+            
+            function dragMouseDown(e) {
+                e = e || window.event;
+                e.preventDefault();
+                // Get the mouse cursor position at startup
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                // Call a function whenever the cursor moves
+                document.onmousemove = elementDrag;
+            }
+            
+            function elementDrag(e) {
+                e = e || window.event;
+                e.preventDefault();
+                // Calculate the new cursor position
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                // Set the element's new position
+                element.style.top = (element.offsetTop - pos2) + "px";
+                element.style.left = (element.offsetLeft - pos1) + "px";
+                
+                // Keep the element within viewport bounds
+                if (parseInt(element.style.top) < 0) element.style.top = "0px";
+                if (parseInt(element.style.left) < 0) element.style.left = "0px";
+                
+                var maxTop = window.innerHeight - element.offsetHeight;
+                var maxLeft = window.innerWidth - element.offsetWidth;
+                
+                if (parseInt(element.style.top) > maxTop) element.style.top = maxTop + "px";
+                if (parseInt(element.style.left) > maxLeft) element.style.left = maxLeft + "px";
+            }
+            
+            function closeDragElement() {
+                // Stop moving when mouse button is released
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        }
+    </script>
+
+    <!-- Language Translation Helper for JavaScript -->
+    <script>
+        // This object provides translations for JavaScript text
+        const translations = {
+            'starting_analysis': '{{ _("Starting analysis...") }}',
+            'connecting': '{{ _("Connecting to Ethereum network...") }}',
+            'fetching_info': '{{ _("Fetching contract information...") }}',
+            'retrieving_bytecode': '{{ _("Retrieving bytecode...") }}',
+            'disassembling_bytecode': '{{ _("Disassembling bytecode...") }}',
+            'identifying_functions': '{{ _("Identifying function signatures...") }}',
+            'analyzing_reentrancy': '{{ _("Analyzing for reentrancy vulnerabilities...") }}',
+            'checking_opcodes': '{{ _("Checking for dangerous opcodes...") }}',
+            'analyzing_relationships': '{{ _("Analyzing contract relationships...") }}',
+            'preparing_results': '{{ _("Preparing analysis results...") }}',
+            'analysis_complete': '{{ _("Analysis complete!") }}',
+            'selected_network': '{{ _("Selected network:") }}',
+            'progress_title': '{{ _("Analysis Progress") }}',
+            'analyzing': '{{ _("Analyzing...") }}'
+        };
+        
+        // Update the progress title
+        document.addEventListener('DOMContentLoaded', function() {
+            const progressHeader = document.querySelector('#processing-header span');
+            if (progressHeader) {
+                progressHeader.textContent = translations.progress_title;
+            }
+        });
+    </script>
+
+    <script>
+        // Update the dynamic simulation text based on translations
+        function simulateAnalysisProgress() {
+            var analysisSteps = [
+                { progress: 10, message: translations.connecting, type: 'step' },
+                { progress: 20, message: translations.fetching_info, type: 'step' },
+                { progress: 30, message: translations.retrieving_bytecode, type: 'step' },
+                { progress: 40, message: translations.disassembling_bytecode, type: 'step' },
+                { progress: 60, message: translations.identifying_functions, type: 'step' },
+                { progress: 70, message: translations.analyzing_reentrancy, type: 'step' },
+                { progress: 80, message: translations.checking_opcodes, type: 'step' },
+                { progress: 90, message: translations.analyzing_relationships, type: 'step' },
+                { progress: 95, message: translations.preparing_results, type: 'step' },
+                { progress: 100, message: translations.analysis_complete, type: 'complete' }
+            ];
+            
+            var networkSelect = document.getElementById('network');
+            var network = networkSelect ? networkSelect.value : 'mainnet';
+            
+            // Add network-specific message
+            updateProgress(5, translations.selected_network + ' ' + network, 'info');
+            
+            // Process each step with timing based on progress percentage
+            var currentStep = 0;
+            function processStep() {
+                if (currentStep < analysisSteps.length) {
+                    var step = analysisSteps[currentStep];
+                    updateProgress(step.progress, step.message, step.type);
+                    
+                    // Calculate delay for next step (faster at beginning, slower towards end)
+                    var delay = 300 + (step.progress * 20);
+                    
+                    currentStep++;
+                    setTimeout(processStep, delay);
+                }
+            }
+            
+            // Start processing after a short delay
+            setTimeout(processStep, 500);
+        }
+    </script>
+</body>
+</html> 

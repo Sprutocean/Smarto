@@ -1,0 +1,67 @@
+/* Custom styles for Ethereum Security Toolkit UI */
+
+/* Add some padding to the bottom of the page for better scrolling */
+body {
+    padding-bottom: 2rem;
+}
+
+/* Custom code styling */
+pre code {
+    display: block;
+    white-space: pre;
+    overflow-x: auto;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+/* Make the cards a bit more prominent */
+.card {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+}
+
+.card-header {
+    font-weight: 500;
+}
+
+/* Custom colors for different result types */
+.bg-success {
+    color: white;
+}
+
+.bg-warning {
+    color: #212529;
+}
+
+/* Styling for contract addresses */
+.text-break {
+    word-break: break-all;
+}
+
+/* Custom table styling */
+.table {
+    font-size: 0.95rem;
+}
+
+.table code {
+    background-color: #f8f9fa;
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+
+/* Alert styling */
+.alert ul {
+    margin-bottom: 0;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    .container {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    
+    h1.display-4 {
+        font-size: 2.5rem;
+    }
+} 

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analysis Results - Ethereum Security Toolkit</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container mt-4">
+        <header class="mb-4">
+            <h1 class="display-4">Ethereum Security Toolkit</h1>
+            <p class="lead">Analysis Results</p>
+        </header>
+
+        <nav aria-label="breadcrumb" class="mb-4">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Results</li>
+            </ol>
+        </nav>
+
+        {% if error_message %}
+        <div class="alert alert-danger" role="alert">
+            <strong>Error:</strong> {{ error_message }}
+        </div>
+        {% endif %}
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>Analysis Details</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <p><strong>Contract Address:</strong></p>
+                        <p class="text-break">{{ contract_address }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <p><strong>Network:</strong></p>
+                        <p>{{ network }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <p><strong>Analysis Type:</strong></p>
+                        <p>{{ analysis_type }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if not error_message %}
+            {% if analysis_type == 'analyze' %}
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Contract Information</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if results.contract_info %}
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p><strong>Contract Type:</strong> 
+                                        {% if results.contract_info.is_erc20 or results.contract_info.is_erc721 %}
+                                        Token
+                                        {% else %}
+                                        Standard Contract
+                                        {% endif %}
+                                    </p>
+                                    <p><strong>Balance:</strong> {{ results.contract_info.balance_eth }} ETH</p>
+                                    {% if results.contract_info.is_proxy %}
+                                    <p><strong>Is Proxy:</strong> Yes</p>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-6">
+                                    {% if results.contract_info.is_erc20 and results.contract_info.token_info %}
+                                    <h6>Token Information</h6>
+                                    <p><strong>Name:</strong> {{ results.contract_info.token_info.name }}</p>
+                                    <p><strong>Symbol:</strong> {{ results.contract_info.token_info.symbol }}</p>
+                                    <p><strong>Decimals:</strong> {{ results.contract_info.token_info.decimals }}</p>
+                                    <p><strong>Total Supply:</strong> {{ results.contract_info.token_info.total_supply }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% else %}
+                            <p>No contract information available.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Function Signatures</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if results.disassembly and results.disassembly.function_signatures %}
+                            <p>Identified {{ results.disassembly.function_signatures|length }} function signatures:</p>
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Selector</th>
+                                            <th>Function Signature</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for selector, signature in results.disassembly.function_signatures.items() %}
+                                        <tr>
+                                            <td><code>0x{{ selector }}</code></td>
+                                            <td>{{ signature }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p>No function signatures identified.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if analysis_type == 'analyze' or analysis_type == 'reentrancy' %}
+                <div class="card mb-4">
+                    <div class="card-header {% if results.reentrancy_findings %}bg-warning{% else %}bg-success{% endif %}">
+                        <h5>Reentrancy Vulnerability Check</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if results.reentrancy_findings %}
+                            <div class="alert alert-warning">
+                                <p><strong>Found {{ results.reentrancy_findings|length }} potential reentrancy issues:</strong></p>
+                                <ul>
+                                    {% for finding in results.reentrancy_findings %}
+                                    <li>{{ finding }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-success">
+                                <p>No obvious reentrancy vulnerabilities detected.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if analysis_type == 'bytecode' %}
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Bytecode Analysis</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if results.instructions %}
+                            <h6>Disassembled Instructions (first 100)</h6>
+                            <div class="mb-3">
+                                <pre class="border p-3 bg-light"><code>{% for instr in results.instructions %}{{ instr }}
+{% endfor %}</code></pre>
+                            </div>
+                            
+                            <h6>Function Signatures</h6>
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Selector</th>
+                                            <th>Function Signature</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for selector, signature in results.function_signatures.items() %}
+                                        <tr>
+                                            <td><code>0x{{ selector }}</code></td>
+                                            <td>{{ signature }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p>No bytecode analysis available.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if analysis_type == 'relations' or analysis_type == 'analyze' %}
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5>Contract Relationships</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if results.relationships %}
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Child Contract Creation</h6>
+                                    {% if results.relationships.child_indicators %}
+                                        <div class="alert alert-warning">
+                                            <p>Found child contract creation operations:</p>
+                                            <ul>
+                                                {% for op in results.relationships.creation_ops %}
+                                                <li>{{ op.opcode }} at position {{ op.position }}</li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    {% else %}
+                                        <div class="alert alert-success">
+                                            <p>No direct child contract creation operations detected.</p>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Proxy Patterns</h6>
+                                    {% if results.relationships.proxy_indicators %}
+                                        <div class="alert alert-warning">
+                                            <p>Proxy contract indicators detected:</p>
+                                            
+                                            {% if results.relationships.proxy_signatures %}
+                                            <p>Function signatures indicating proxy:</p>
+                                            <ul>
+                                                {% for sig in results.relationships.proxy_signatures %}
+                                                <li>0x{{ sig.selector }}: {{ sig.signature }}</li>
+                                                {% endfor %}
+                                            </ul>
+                                            {% endif %}
+                                            
+                                            {% if results.relationships.clone_pattern_detected %}
+                                            <p>EIP-1167 minimal proxy pattern detected.</p>
+                                            {% endif %}
+                                        </div>
+                                    {% else %}
+                                        <div class="alert alert-success">
+                                            <p>No proxy indicators detected.</p>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            
+                            {% if results.relationships.parent_candidates %}
+                                <h6>Potential Parent/Implementation Contracts</h6>
+                                <ul>
+                                    {% for addr in results.relationships.parent_candidates %}
+                                    <li>{{ addr }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                            
+                            {% if results.decoded_relationships and results.decoded_relationships.implementation_addresses %}
+                                <h6>Potential Implementation Addresses Found in Bytecode</h6>
+                                <ul>
+                                    {% for addr in results.decoded_relationships.implementation_addresses %}
+                                    <li>{{ addr }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        {% else %}
+                            <p>No relationship analysis available.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Raw Analysis Data</h5>
+                </div>
+                <div class="card-body">
+                    <pre class="border p-3 bg-light"><code>{{ results_json }}</code></pre>
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="mt-4">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Back to Home</a>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html> 
